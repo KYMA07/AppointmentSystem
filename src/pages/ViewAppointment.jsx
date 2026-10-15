@@ -336,6 +336,10 @@ export default function ViewAppointment({
                               appointment.status ===
                               "Confirmed"
                                 ? "confirmed"
+                                : appointment.status === "Completed"
+                                ? "bg-green-100 text-green-700 border-green-200"
+                                : appointment.status === "Pending"
+                                ? "bg-yellow-100 text-yellow-700 border-yellow-200"
                                 : "cancelled"
                             }`}
                           >
@@ -421,7 +425,17 @@ function AppointmentCard({
 
           </div>
 
-          <span className="status-badge confirmed">
+          <span
+            className={`status-badge ${
+              appointment.status === "Confirmed"
+                ? "confirmed"
+                : appointment.status === "Completed"
+                ? "bg-green-100 text-green-700 border-green-200"
+                : appointment.status === "Pending"
+                ? "bg-yellow-100 text-yellow-700 border-yellow-200"
+                : "cancelled"
+            }`}
+          >
             {appointment.status}
           </span>
 

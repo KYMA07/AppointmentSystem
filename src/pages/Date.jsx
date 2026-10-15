@@ -1,3 +1,6 @@
+import { useEffect, useState } from "react";
+import api from "../api";
+
 const timeSlots = [
   "10:00 AM",
   "11:30 AM",
@@ -7,6 +10,13 @@ const timeSlots = [
   "05:30 PM",
 ];
 
+/* Local (not UTC) YYYY-MM-DD, so "today" is correct in Manila after midnight */
+const localToday = () => {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
 export default function DateSelector({
   date,
   setDate,
@@ -14,9 +24,43 @@ export default function DateSelector({
   setTime,
   appointments = [],
 }) {
+  /* Times already taken by ANY customer, from the public endpoint */
+  const [bookedTimes, setBookedTimes] = useState([]);
+
+  useEffect(() => {
+    if (!date) {
+      setBookedTimes([]);
+      return;
+    }
+
+    let ignore = false;
+
+    api
+      .get("/appointments/booked", { params: { date } })
+      .then(({ data }) => {
+        if (!ignore) setBookedTimes(data.bookedTimes);
+      })
+      .catch(() => {
+        if (!ignore) setBookedTimes([]);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [date]);
+
+  /* If the chosen time turns out to be taken, clear it */
+  useEffect(() => {
+    if (time && bookedTimes.includes(time)) setTime("");
+  }, [bookedTimes, time, setTime]);
+
   const isSlotBooked = (slot) => {
     if (!date) {
       return false;
+    }
+
+    if (bookedTimes.includes(slot)) {
+      return true;
     }
 
     return appointments.some(
@@ -86,11 +130,7 @@ export default function DateSelector({
             type="date"
             required
             value={date}
-            min={
-              new Date()
-                .toISOString()
-                .split("T")[0]
-            }
+            min={localToday()}
             onChange={handleDateChange}
             className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none transition"
           />

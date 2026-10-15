@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import api from "../api";
 
 export default function AdminSettings({ studioSettings, setStudioSettings }) {
   // Local state to handle form edits before saving
@@ -27,25 +28,32 @@ export default function AdminSettings({ studioSettings, setStudioSettings }) {
     }
   }, [studioSettings]);
 
+  /* setStudioSettings (from App) saves to the server and returns a promise */
+  const saveSettings = async (data, message) => {
+    try {
+      await setStudioSettings(data);
+      if (message) alert(message);
+    } catch (error) {
+      alert(error.response?.data?.message || "Could not save settings.");
+    }
+  };
+
   const handleSaveProfile = (e) => {
     e.preventDefault();
-    setStudioSettings(formData);
-    alert("✅ Studio profile updated successfully!");
+    saveSettings(formData, "✅ Studio profile updated successfully!");
   };
 
   const handleSaveBookingRules = (e) => {
     e.preventDefault();
-    setStudioSettings(formData);
-    alert("✅ Booking rules and hours updated!");
+    saveSettings(formData, "✅ Booking rules and hours updated!");
   };
 
   const handleSavePayment = (e) => {
     e.preventDefault();
-    setStudioSettings(formData);
-    alert("✅ Payment settings saved successfully!");
+  saveSettings(formData, "✅ Payment settings saved successfully!");
   };
 
-  const handleSaveSecurity = (e) => {
+  const handleSaveSecurity = async (e) => {
     e.preventDefault();
     
     // 1. Verify they entered a current password
@@ -70,7 +78,17 @@ export default function AdminSettings({ studioSettings, setStudioSettings }) {
       In a real backend, you would send {currentPassword, newPassword} to an API here.
       For local development, we just reset the form and show success.
     */
-    alert("✅ Admin password updated successfully!");
+    try {
+      await api.patch("/auth/password", { currentPassword, newPassword });
+    } catch (error) {
+      alert(
+        "⚠️ " +
+          (error.response?.data?.message || "Could not update the password.")
+      );
+      return;
+    }
+
+    alert("✅ Password updated successfully!");
     
     // Clear the fields for security
     setCurrentPassword("");
@@ -255,7 +273,7 @@ export default function AdminSettings({ studioSettings, setStudioSettings }) {
                 onChange={(e) => {
                   const updatedData = { ...formData, emailAlerts: e.target.checked };
                   setFormData(updatedData);
-                  setStudioSettings(updatedData);
+                  saveSettings(updatedData);
                 }}
               />
               <div className="peer h-7 w-14 rounded-full bg-slate-200 after:absolute after:left-[4px] after:top-[4px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:bg-sky-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-sky-100"></div>

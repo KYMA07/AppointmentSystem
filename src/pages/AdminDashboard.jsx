@@ -1,74 +1,171 @@
-import { useState, useMemo, useEffect } from "react";
+import { useEffect, useState } from "react";
+import api from "../api";
 
-export default function AdminDashboard({ appointments, setAppointments, studioSettings }) {
+const PAGE_SIZE = 10;
+
+export default function AdminDashboard({ studioSettings }) {
   const [filter, setFilter] = useState("All");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(""); // what is typed
+  const [search, setSearch] = useState(""); // what is sent to the server
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
 
-  /* METRICS CALCULATION */
-  const metrics = useMemo(() => {
-    const total = appointments.length;
-    const active = appointments.filter(
-      (a) => a.status === "Confirmed" || a.status === "Pending"
-    ).length;
-    const revenue = appointments
-      .filter((a) => a.status === "Confirmed" || a.status === "Completed")
-      .reduce((sum, a) => sum + (Number(a.total) || 0), 0);
-    const cancelled = appointments.filter((a) => a.status === "Cancelled").length;
+  const [rows, setRows] = useState([]);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [reload, setReload] = useState(0); // bump to refetch after a change
+  const [metrics, setMetrics] = useState({
+    total: 0,
+    active: 0,
+    revenue: 0,
+    cancelled: 0,
+  });
 
-    return { total, active, revenue, cancelled };
-  }, [appointments]);
+  /* Wait until the admin stops typing, then search from page 1 */
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchQuery.trim());
+      setCurrentPage(1);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
-  /* FILTERING & SEARCHING */
-  const filteredAppointments = useMemo(() => {
-    let result = appointments;
-
-    // 1. Apply Status Filter
-    if (filter !== "All") {
-      result = result.filter((a) => a.status === filter);
-    }
-
-    // 2. Apply Search Query
-    if (searchQuery.trim()) {
-      const lowerQuery = searchQuery.toLowerCase();
-      result = result.filter(
-        (a) =>
-          a.firstName?.toLowerCase().includes(lowerQuery) ||
-          a.lastName?.toLowerCase().includes(lowerQuery) ||
-          a.email?.toLowerCase().includes(lowerQuery) ||
-          a.phone?.includes(lowerQuery) ||
-          a.gcashReference?.includes(lowerQuery)
-      );
-    }
-
-    // 3. Sort by Date (Newest booking creation first)
-    return result.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-  }, [appointments, filter, searchQuery]);
-
-  /* PAGINATION LOGIC */
-  const totalPages = Math.ceil(filteredAppointments.length / itemsPerPage);
-  
-  const paginatedAppointments = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return filteredAppointments.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredAppointments, currentPage]);
-
-  // Reset to page 1 whenever filters or search change
+  /* A new status filter starts from page 1 */
   useEffect(() => {
     setCurrentPage(1);
-  }, [filter, searchQuery]);
+  }, [filter]);
 
-  /* STATUS UPDATE HANDLER */
-  const updateStatus = (id, newStatus) => {
-    setAppointments((prev) =>
-      prev.map((app) => (app.id === id ? { ...app, status: newStatus } : app))
-    );
+  /* LOAD ONE PAGE (search, filter and pagination all happen on the server) */
+  useEffect(() => {
+    let ignore = false;
+
+    const load = async () => {
+      setLoading(true);
+      setError("");
+
+      try {
+        const { data } = await api.get("/appointments", {
+          params: {
+            page: currentPage,
+            limit: PAGE_SIZE,
+            ...(filter !== "All" && { status: filter }),
+            ...(search && { search }),
+          },
+        });
+
+        if (ignore) return;
+
+        setRows(data.appointments);
+        setTotalCount(data.total);
+        setTotalPages(Math.max(data.totalPages, 1));
+
+        /* e.g. the last row of the last page was just deleted */
+        if (data.totalPages > 0 && currentPage > data.totalPages) {
+          setCurrentPage(data.totalPages);
+        }
+      } catch (err) {
+        if (!ignore) {
+          setError(err.response?.data?.message || "Could not load appointments.");
+        }
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    };
+
+    load();
+
+    return () => {
+      ignore = true;
+    };
+  }, [currentPage, filter, search, reload]);
+
+  /* METRICS (counted by the server across ALL appointments) */
+  useEffect(() => {
+    api
+      .get("/appointments/stats")
+      .then(({ data }) => setMetrics(data.stats))
+      .catch(() => {});
+  }, [reload]);
+
+  /* RECEIPT: fetched with the login token, shown in the modal */
+  const viewReceipt = async (id) => {
+    try {
+      const { data } = await api.get(`/appointments/${id}/receipt`, {
+        responseType: "blob",
+      });
+      setSelectedReceipt(URL.createObjectURL(data));
+    } catch (err) {
+      alert("Could not load the receipt.");
+    }
   };
 
+  /* Free the image from memory when the modal closes */
+  useEffect(() => {
+    return () => {
+      if (selectedReceipt) URL.revokeObjectURL(selectedReceipt);
+    };
+  }, [selectedReceipt]);
+
+  /* STATUS UPDATE HANDLER */
+  const updateStatus = async (id, newStatus) => {
+    try {
+      await api.patch(`/appointments/${id}/status`, { status: newStatus });
+      setReload((n) => n + 1);
+    } catch (err) {
+      alert(
+        err.response?.data?.message ||
+          "Could not update the appointment. Please try again."
+      );
+    }
+  };
+
+  /* DELETE HANDLER */
+  const deleteAppointment = async (id) => {
+    if (!window.confirm("Delete this appointment permanently?")) return;
+
+    try {
+      await api.delete(`/appointments/${id}`);
+      setReload((n) => n + 1);
+    } catch (err) {
+      alert(
+        err.response?.data?.message ||
+          "Could not delete the appointment. Please try again."
+      );
+    }
+  };
+
+  /* Every appointment matching the current filter and search (for the CSV) */
+  const fetchAllMatching = async () => {
+    const all = [];
+    let page = 1;
+    let pages = 1;
+
+    try {
+      do {
+        const { data } = await api.get("/appointments", {
+          params: {
+            page,
+            limit: 50,
+            ...(filter !== "All" && { status: filter }),
+            ...(search && { search }),
+          },
+        });
+        all.push(...data.appointments);
+        pages = data.totalPages;
+        page += 1;
+      } while (page <= pages);
+    } catch (err) {
+      alert("Could not load the data for export.");
+      return [];
+    }
+
+    return all;
+  };
   /* CSV EXPORT HANDLER */
-  const handleExportCSV = () => {
+    const handleExportCSV = async () => {
+    const filteredAppointments = await fetchAllMatching();
     if (filteredAppointments.length === 0) {
       alert("No data to export.");
       return;
@@ -205,14 +302,20 @@ export default function AdminDashboard({ appointments, setAppointments, studioSe
               </tr>
             </thead>
             <tbody>
-              {paginatedAppointments.length === 0 ? (
+              {error ? (
+                <tr>
+                  <td colSpan="6" className="text-center py-10 text-red-600">
+                    {error}
+                  </td>
+                </tr>
+              ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan="6" className="text-center py-10 text-slate-500">
-                    No appointments found matching your search or filter.
+                    {loading ? "Loading appointments..." : "No appointments found matching your search or filter."}
                   </td>
                 </tr>
               ) : (
-                paginatedAppointments.map((app) => (
+                rows.map((app) => (
                   <tr key={app.id}>
                     {/* CUSTOMER */}
                     <td>
@@ -239,12 +342,15 @@ export default function AdminDashboard({ appointments, setAppointments, studioSe
                       {app.paymentMethod === "GCash" && app.gcashReference && (
                         <div className="mt-2 flex flex-col gap-1">
                           <span className="text-[10px] font-bold text-slate-400">REF: {app.gcashReference}</span>
-                          <button
-                            onClick={() => setSelectedReceipt(app.gcashReceiptPreview || app.gcashReceipt)}
-                            className="text-xs font-bold text-sky-600 hover:text-sky-800 text-left"
-                          >
-                            View Receipt
-                          </button>
+                          {app.hasReceipt && (
+                            <button
+                              onClick={() => viewReceipt(app.id)}
+                              className="text-xs font-bold text-sky-600 hover:text-sky-800 text-left"
+                            >
+                              View Receipt
+                            </button>
+                          )}
+
                         </div>
                       )}
                     </td>
@@ -290,6 +396,12 @@ export default function AdminDashboard({ appointments, setAppointments, studioSe
                             Cancel
                           </button>
                         )}
+                        <button
+                          onClick={() => deleteAppointment(app.id)}
+                          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-500 hover:bg-slate-50 hover:text-red-600 transition"
+                        >
+                          Delete
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -303,7 +415,7 @@ export default function AdminDashboard({ appointments, setAppointments, studioSe
         {totalPages > 1 && (
           <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-6">
             <p className="text-sm text-slate-500">
-              Showing <span className="font-bold text-slate-900">{((currentPage - 1) * itemsPerPage) + 1}</span> to <span className="font-bold text-slate-900">{Math.min(currentPage * itemsPerPage, filteredAppointments.length)}</span> of <span className="font-bold text-slate-900">{filteredAppointments.length}</span> results
+              Showing <span className="font-bold text-slate-900">{((currentPage - 1) * PAGE_SIZE) + 1}</span> to <span className="font-bold text-slate-900">{Math.min(currentPage * PAGE_SIZE, totalCount)}</span> of <span className="font-bold text-slate-900">{totalCount}</span> results
             </p>
             <div className="flex items-center gap-2">
               <button

@@ -101,6 +101,13 @@ export default function Navbar({
             </button>
 
             <button
+              className="nav-link"
+              onClick={() => setCurrentView("profile")}
+            >
+              Profile
+            </button>
+
+            <button
               className="nav-register"
               onClick={handleLogout}
             >

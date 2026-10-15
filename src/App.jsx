@@ -1,4 +1,12 @@
 import { useEffect, useState } from "react";
+import {
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
+import api, { clearToken, getToken, saveToken } from "./api";
 
 import AdminNavbar from "./components/AdminNavbar";
 import Navbar from "./components/Navbar";
@@ -10,9 +18,49 @@ import Login from "./pages/Login";
 import Packages from "./pages/Packages";
 import Register from "./pages/Register";
 import ViewAppointment from "./pages/ViewAppointment";
+import Profile from "./pages/Profile";
+
+/* view name -> URL (the navbars and pages still call setCurrentView("name")) */
+const VIEW_PATHS = {
+  packages: "/",
+  choose: "/book",
+  view: "/appointments",
+  cancel: "/manage",
+  login: "/login",
+  register: "/register",
+  adminDashboard: "/admin",
+  adminSettings: "/admin/settings",
+  profile: "/profile",
+};
+const PATH_VIEWS = Object.fromEntries(
+  Object.entries(VIEW_PATHS).map(([view, path]) => [path, view])
+);
+
+/* Logged-in users only */
+function ProtectedRoute({ isLoggedIn, children }) {
+  const location = useLocation();
+  return isLoggedIn ? (
+    children
+  ) : (
+    <Navigate to="/login" replace state={{ from: location.pathname }} />
+  );
+}
+
+/* Admins only */
+function AdminRoute({ isLoggedIn, isAdmin, children }) {
+  if (!isLoggedIn) return <Navigate to="/login" replace />;
+  return isAdmin ? children : <Navigate to="/" replace />;
+}
 
 export default function App() {
-  const [currentView, setCurrentView] = useState("packages");
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  /* Derived from the URL, used by the navbars for the active highlight */
+  const currentView =
+    PATH_VIEWS[location.pathname.replace(/\/+$/, "") || "/"] || "";
+
+  const setCurrentView = (view) => navigate(VIEW_PATHS[view] || "/");
 
   const [isLoggedIn, setIsLoggedIn] = useState(() => {
     return localStorage.getItem("snapYourselfLoggedIn") === "true";
@@ -26,8 +74,7 @@ export default function App() {
 
   /* GLOBAL STUDIO SETTINGS STATE */
   const [studioSettings, setStudioSettings] = useState(() => {
-    const saved = localStorage.getItem("snapYourselfSettings");
-    if (saved) return JSON.parse(saved);
+
     
     // Default Settings if none exist
     return {
@@ -44,24 +91,23 @@ export default function App() {
     };
   });
 
-  const [appointments, setAppointments] = useState(() => {
-    try {
-      const saved = localStorage.getItem("snapYourselfAppointments");
-      if (!saved) return [];
-      const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-      console.error("Could not load appointments:", error);
-      return [];
-    }
-  });
+  const [appointments, setAppointments] = useState([]);
 
   const [showLoginPopup, setShowLoginPopup] = useState(false);
 
-  /* SAVE SETTINGS TO LOCAL STORAGE */
+  /* LOAD STUDIO SETTINGS FROM THE SERVER (public endpoint) */
   useEffect(() => {
-    localStorage.setItem("snapYourselfSettings", JSON.stringify(studioSettings));
-  }, [studioSettings]);
+    api
+      .get("/settings")
+      .then(({ data }) => setStudioSettings(data.settings))
+      .catch((error) => console.error("Could not load settings:", error));
+  }, []);
+
+  /* SAVE STUDIO SETTINGS (admin only, enforced by the server) */
+  const saveStudioSettings = async (data) => {
+    const res = await api.put("/settings", data);
+    setStudioSettings(res.data.settings);
+  };
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -81,26 +127,44 @@ export default function App() {
     }
   }, [isAdmin]);
 
-  useEffect(() => {
+  /* LOAD APPOINTMENTS FROM THE SERVER */
+  const loadAppointments = async (admin) => {
     try {
-      localStorage.setItem("snapYourselfAppointments", JSON.stringify(appointments));
+      const { data } = admin
+        ? { data: { appointments: [] } } // the admin dashboard loads its own pages
+        : await api.get("/appointments/mine");
+      setAppointments(data.appointments);
     } catch (error) {
-      console.error("Could not save appointments:", error);
+      console.error("Could not load appointments:", error);
     }
-  }, [appointments]);
+  };
+
+  /* VERIFY THE SAVED TOKEN WITH THE SERVER ON STARTUP */
+  useEffect(() => {
+    const verifySession = async () => {
+      if (!getToken()) {
+        setIsLoggedIn(false);
+        return;
+      }
+
+      try {
+        const { data } = await api.get("/auth/me");
+        const admin = data.user.role === "admin";
+        setIsLoggedIn(true);
+        setIsAdmin(admin);
+        loadAppointments(admin);
+      } catch (error) {
+        clearToken();
+        setIsLoggedIn(false);
+      }
+    };
+
+    verifySession();
+  }, []);
 
   useEffect(() => {
     const handleStorageChange = (event) => {
-      if (event.key === "snapYourselfAppointments") {
-        try {
-          const updatedAppointments = event.newValue ? JSON.parse(event.newValue) : [];
-          if (Array.isArray(updatedAppointments)) {
-            setAppointments(updatedAppointments);
-          }
-        } catch (error) {
-          console.error("Could not sync appointments:", error);
-        }
-      }
+
       // Sync settings across tabs
       if (event.key === "snapYourselfSettings") {
         try {
@@ -130,9 +194,9 @@ export default function App() {
     );
   };
 
-  const handleBookingConfirm = (bookingData) => {
+  const handleBookingConfirm = async (bookingData) => {
     if (!isLoggedIn) {
-      setShowLoginPopup(true);
+      navigate("/login", { state: { from: "/book" } });
       return;
     }
 
@@ -143,38 +207,36 @@ export default function App() {
       return;
     }
 
-    const newAppointment = {
-      id: Date.now() + Math.random().toString(36).substring(2, 8),
-      ...bookingData,
-      package: selectedPackage,
-      packageName: selectedPackage?.name || "Photography Package",
-      packagePrice: selectedPackage?.price || 0,
-      packageIcon: selectedPackage?.icon || "📷",
-      packagePeople: selectedPackage?.people || "",
-      packageDuration: selectedPackage?.duration || "",
-      status: "Pending", // Starts pending for admin approval
-      rescheduleCount: 0,
-      createdAt: new Date().toISOString(),
-      gcashReceiptPreview:
-        bookingData.gcashReceipt && typeof bookingData.gcashReceipt !== "string"
-          ? URL.createObjectURL(bookingData.gcashReceipt)
-          : bookingData.gcashReceipt || null,
-    };
+    try {
+      const { data } = await api.post("/appointments", {
+        packageName: selectedPackage?.name || "Photography Package",
+        packagePrice: selectedPackage?.price || 0,
+        packageIcon: selectedPackage?.icon || "📷",
+        packagePeople: selectedPackage?.people || "",
+        packageDuration: selectedPackage?.duration || "",
+        date: bookingData.date,
+        time: bookingData.time,
+        firstName: bookingData.firstName,
+        lastName: bookingData.lastName,
+        email: bookingData.email,
+        phone: bookingData.phone,
+        smsConsent: bookingData.smsConsent,
+        paymentMethod: bookingData.paymentMethod,
+        gcashReference: bookingData.gcashReference,
+        freeBackdrops: bookingData.freeBackdrops,
+        extraBackdrops: bookingData.extraBackdrops,
+        total: bookingData.total,
+        gcashReceipt: bookingData.gcashReceipt,
+      });
 
-    setAppointments((prev) => {
-      const alreadyBooked = prev.some(
-        (appointment) =>
-          appointment.date === newAppointment.date &&
-          appointment.time === newAppointment.time &&
-          appointment.status !== "Cancelled"
+      setAppointments((prev) => [data.appointment, ...prev]);
+    } catch (error) {
+      alert(
+        error.response?.data?.message ||
+          "Could not book your appointment. Please try again."
       );
-
-      if (alreadyBooked) {
-        alert(`Sorry, ${newAppointment.date} at ${newAppointment.time} was just booked by another customer.\n\nPlease choose another available time slot.`);
-        return prev;
-      }
-      return [...prev, newAppointment];
-    });
+      return;
+    }
 
     setCurrentView("view");
     window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
@@ -186,28 +248,36 @@ export default function App() {
     window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
   };
 
-  const handleLoginSuccess = (email, password) => {
-    const isAdminEmail = email === "admin@snapyourself.com" || email === "admin@gmail.com";
+  const handleLoginSuccess = async (email, password) => {
+    try {
+      const { data } = await api.post("/auth/login", { email, password });
+      saveToken(data.token);
 
-    if (isAdminEmail) {
-      if (password === "admin123") {
-        setIsLoggedIn(true);
-        setIsAdmin(true);
-        setCurrentView("adminDashboard");
-        window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
-      } else {
-        alert("Incorrect admin password.");
-        return; 
-      }
-    } else {
+      const admin = data.user.role === "admin";
       setIsLoggedIn(true);
-      setIsAdmin(false);
-      setCurrentView("packages");
+      setIsAdmin(admin);
+      await loadAppointments(admin);
+      navigate(admin ? "/admin" : location.state?.from || "/");
       window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+    } catch (error) {
+      alert(
+        error.response?.data?.message ||
+          "Could not reach the server. Is it running?"
+      );
     }
   };
 
-  const handleRegister = (userData) => {
+  const handleRegister = async (userData) => {
+    try {
+      await api.post("/auth/register", userData);
+    } catch (error) {
+      alert(
+        error.response?.data?.message ||
+          "Could not reach the server. Is it running?"
+      );
+      return;
+    }
+
     alert("Account created successfully! You can now login.");
     setCurrentView("login");
     window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
@@ -218,9 +288,24 @@ export default function App() {
     window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
   };
 
+  /* A 401 on a logged-in request (expired token) logs the user out */
+  useEffect(() => {
+    const onExpired = () => {
+      setIsLoggedIn(false);
+      setIsAdmin(false);
+      setAppointments([]);
+      navigate("/login");
+    };
+
+    window.addEventListener("auth:expired", onExpired);
+    return () => window.removeEventListener("auth:expired", onExpired);
+  }, []);
+
   const handleSetIsLoggedIn = (value) => {
     setIsLoggedIn(value);
     if (!value) {
+      clearToken();
+      setAppointments([]);
       setIsAdmin(false);
       localStorage.removeItem("snapYourselfLoggedIn");
       localStorage.removeItem("snapYourselfIsAdmin");
@@ -247,67 +332,113 @@ export default function App() {
         />
       )}
 
-      <main className="w-full">
-        {currentView === "packages" && (
-          <Packages onSelectPackage={handleSelectPackage} />
-        )}
-
-        {currentView === "choose" && (
-          <ChoosePackages
-            selectedPackage={selectedPackage}
-            onConfirm={handleBookingConfirm}
-            setCurrentView={handleSetCurrentView}
-            appointments={appointments}
-            studioSettings={studioSettings} // Pass settings to Booking Form
+            <main className="w-full">
+        <Routes>
+          <Route
+            path="/"
+            element={<Packages onSelectPackage={handleSelectPackage} />}
           />
-        )}
 
-        {currentView === "view" && (
-          <ViewAppointment
-            appointments={appointments}
-            setCurrentView={handleSetCurrentView}
+          <Route
+            path="/book"
+            element={
+              selectedPackage ? (
+                <ChoosePackages
+                  selectedPackage={selectedPackage}
+                  onConfirm={handleBookingConfirm}
+                  setCurrentView={handleSetCurrentView}
+                  appointments={appointments}
+                  studioSettings={studioSettings}
+                />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
           />
-        )}
 
-        {currentView === "cancel" && (
-          <CancelReschedule
-            appointments={appointments}
-            setAppointments={setAppointments}
+          <Route
+            path="/appointments"
+            element={
+              <ProtectedRoute isLoggedIn={isLoggedIn}>
+                <ViewAppointment
+                  appointments={appointments}
+                  setCurrentView={handleSetCurrentView}
+                />
+              </ProtectedRoute>
+            }
           />
-        )}
 
-        {currentView === "login" && (
-          <Login
-            setIsLoggedIn={setIsLoggedIn}
-            setCurrentView={handleSetCurrentView}
-            onLoginSuccess={handleLoginSuccess}
+          <Route
+            path="/manage"
+            element={
+              <ProtectedRoute isLoggedIn={isLoggedIn}>
+                <CancelReschedule
+                  appointments={appointments}
+                  setAppointments={setAppointments}
+                />
+              </ProtectedRoute>
+            }
           />
-        )}
 
-        {currentView === "register" && (
-          <Register
-            onRegister={handleRegister}
-            setCurrentView={handleSetCurrentView}
+          <Route
+            path="/login"
+            element={
+              <Login
+                setIsLoggedIn={setIsLoggedIn}
+                setCurrentView={handleSetCurrentView}
+                onLoginSuccess={handleLoginSuccess}
+              />
+            }
           />
-        )}
 
-        {currentView === "adminDashboard" && isAdmin && (
-          <AdminDashboard
-            appointments={appointments}
-            setAppointments={setAppointments}
-            studioSettings={studioSettings} // Pass to Admin Dashboard
+          <Route
+            path="/register"
+            element={
+              <Register
+                onRegister={handleRegister}
+                setCurrentView={handleSetCurrentView}
+              />
+            }
           />
-        )}
 
-        {currentView === "adminSettings" && isAdmin && (
-          <AdminSettings 
-            studioSettings={studioSettings} 
-            setStudioSettings={setStudioSettings} // Pass to Settings to edit
+          <Route
+            path="/admin"
+            element={
+              <AdminRoute isLoggedIn={isLoggedIn} isAdmin={isAdmin}>
+                <AdminDashboard
+                  appointments={appointments}
+                  setAppointments={setAppointments}
+                  studioSettings={studioSettings}
+                />
+              </AdminRoute>
+            }
           />
-        )}
+
+          <Route
+            path="/admin/settings"
+            element={
+              <AdminRoute isLoggedIn={isLoggedIn} isAdmin={isAdmin}>
+                <AdminSettings
+                  studioSettings={studioSettings}
+                  setStudioSettings={saveStudioSettings}
+                />
+              </AdminRoute>
+            }
+          />
+
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute isLoggedIn={isLoggedIn}>
+                <Profile />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </main>
 
-      {/* LOGIN POPUP (Omitted for brevity, keep your existing one here) */}
     </div>
   );
 }

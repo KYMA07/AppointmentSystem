@@ -3,6 +3,7 @@ import {
   useState,
 } from "react";
 
+import api from "../api";
 import cameraBg from "./camerabg.png";
 
 /* 
@@ -175,28 +176,21 @@ export default function CancelReschedule({
      ACTUALLY CANCEL
    */
 
-  const confirmCancel =
-    () => {
-      const appointment =
-        confirmation?.appointment;
+  const confirmCancel = async () => {
+    const appointment = confirmation?.appointment;
 
-      if (!appointment) {
-        return;
-      }
+    if (!appointment) {
+      return;
+    }
+
+    try {
+      const { data } = await api.patch(
+        `/appointments/${appointment.id}/cancel`
+      );
 
       setAppointments((prev) =>
-        prev.map(
-          (currentAppointment) =>
-            currentAppointment.id ===
-            appointment.id
-              ? {
-                  ...currentAppointment,
-                  status:
-                    "Cancelled",
-                  cancelledAt:
-                    new Date().toISOString(),
-                }
-              : currentAppointment
+        prev.map((current) =>
+          current.id === appointment.id ? data.appointment : current
         )
       );
 
@@ -207,7 +201,17 @@ export default function CancelReschedule({
         "Appointment Cancelled",
         "Your appointment has been successfully cancelled."
       );
-    };
+    } catch (error) {
+      setConfirmation(null);
+
+      showNotification(
+        "error",
+        "Could Not Cancel",
+        error.response?.data?.message ||
+          "Something went wrong. Please try again."
+      );
+    }
+  };
 
   /* 
      START RESCHEDULE
@@ -342,7 +346,7 @@ export default function CancelReschedule({
    */
 
   const confirmReschedule =
-    () => {
+    async () => {
       const data =
         confirmation;
 
@@ -402,43 +406,29 @@ export default function CancelReschedule({
         return;
       }
 
-      /* 
-         UPDATE APPOINTMENT
-      */
+      try {
+        const { data: result } = await api.patch(
+          `/appointments/${appointment.id}/reschedule`,
+          { date: confirmedDate, time: confirmedTime }
+        );
 
-      setAppointments((prev) =>
-        prev.map(
-          (currentAppointment) =>
-            currentAppointment.id ===
-            appointment.id
-              ? {
-                  ...currentAppointment,
+        setAppointments((prev) =>
+          prev.map((current) =>
+            current.id === appointment.id ? result.appointment : current
+          )
+        );
+      } catch (error) {
+        setConfirmation(null);
 
-                  date:
-                    confirmedDate,
+        showNotification(
+          "error",
+          "Could Not Reschedule",
+          error.response?.data?.message ||
+            "Something went wrong. Please try again."
+        );
 
-                  time:
-                    confirmedTime,
-
-                  status:
-                    "Confirmed",
-
-           
-                  rescheduleCount: 1,
-
-               
-                  previousDate:
-                    currentAppointment.date,
-
-                  previousTime:
-                    currentAppointment.time,
-
-                  rescheduledAt:
-                    new Date().toISOString(),
-                }
-              : currentAppointment
-        )
-      );
+        return;
+      }
 
       /* 
          RESET FORM
