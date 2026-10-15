@@ -7,6 +7,7 @@ import {
 
 import { createWorker } from "tesseract.js";
 import DateSelector from "./Date";
+import { validateCustomer } from "../validators";
 
 /*
    BACKDROPS
@@ -66,6 +67,34 @@ export default function ChoosePackages({
 
   const [phone, setPhone] =
     useState("");
+
+  /* LIVE CUSTOMER VALIDATION */
+  const [customerTouched, setCustomerTouched] = useState({});
+
+  const customerErrors = validateCustomer({
+    firstName,
+    lastName,
+    email,
+    phone,
+  });
+
+  const handleCustomerBlur = (e) => {
+    const { name } = e.target;
+    setCustomerTouched((current) => ({ ...current, [name]: true }));
+  };
+
+  const customerError = (name) =>
+    customerTouched[name] ? customerErrors[name] : "";
+
+  const checkCustomerForm = () => {
+    setCustomerTouched({
+      firstName: true,
+      lastName: true,
+      email: true,
+      phone: true,
+    });
+    return Object.keys(customerErrors).length === 0;
+  };
 
   const [smsConsent, setSmsConsent] =
     useState(false);
@@ -914,6 +943,7 @@ if (isSlotBooked(date, time)) {
     */
 
     if (
+      !checkCustomerForm() ||
       !firstName ||
       !lastName ||
       !email ||
@@ -1123,6 +1153,7 @@ if (isSlotBooked(date, time)) {
 
           <form
             onSubmit={handleSubmit}
+            noValidate
             className="space-y-6"
           >
 
@@ -1201,11 +1232,17 @@ if (isSlotBooked(date, time)) {
 
                   <label className="block text-sm font-bold text-slate-700 mb-2">
                     First Name *
+                    {customerError("firstName") && (
+                      <span className="field-error">{customerError("firstName")}</span>
+                    )}
                   </label>
 
                   <input
                     type="text"
                     placeholder="Enter first name"
+                    name="firstName"
+                    onBlur={handleCustomerBlur}
+                    aria-invalid={Boolean(customerError("firstName"))}
                     value={firstName}
                     onChange={(e) =>
                       setFirstName(
@@ -1224,11 +1261,17 @@ if (isSlotBooked(date, time)) {
 
                   <label className="block text-sm font-bold text-slate-700 mb-2">
                     Last Name *
+                    {customerError("lastName") && (
+                      <span className="field-error">{customerError("lastName")}</span>
+                    )}
                   </label>
 
                   <input
                     type="text"
                     placeholder="Enter last name"
+                    name="lastName"
+                    onBlur={handleCustomerBlur}
+                    aria-invalid={Boolean(customerError("lastName"))}
                     value={lastName}
                     onChange={(e) =>
                       setLastName(
@@ -1247,11 +1290,17 @@ if (isSlotBooked(date, time)) {
 
                   <label className="block text-sm font-bold text-slate-700 mb-2">
                     Email Address *
+                    {customerError("email") && (
+                      <span className="field-error">{customerError("email")}</span>
+                    )}
                   </label>
 
                   <input
                     type="email"
                     placeholder="you@example.com"
+                    name="email"
+                    onBlur={handleCustomerBlur}
+                    aria-invalid={Boolean(customerError("email"))}
                     value={email}
                     onChange={(e) =>
                       setEmail(
@@ -1270,11 +1319,17 @@ if (isSlotBooked(date, time)) {
 
                   <label className="block text-sm font-bold text-slate-700 mb-2">
                     Phone Number *
+                    {customerError("phone") && (
+                      <span className="field-error">{customerError("phone")}</span>
+                    )}
                   </label>
 
                   <input
                     type="tel"
                     placeholder="09XXXXXXXXX"
+                    name="phone"
+                    onBlur={handleCustomerBlur}
+                    aria-invalid={Boolean(customerError("phone"))}
                     value={phone}
                     onChange={(e) =>
                       setPhone(

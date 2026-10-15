@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { validateRegister } from "../validators";
 import cameraBg from "./camerabg.png";
 
 export default function Register({
@@ -12,7 +13,37 @@ export default function Register({
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
+  const [touched, setTouched] = useState({});
+
+  const errors = validateRegister({
+    firstName,
+    lastName,
+    email,
+    phone,
+    password,
+    confirmPassword,
+  });
+
+  const handleBlur = (e) => {
+    const { name } = e.target;
+    setTouched((current) => ({ ...current, [name]: true }));
+  };
+
+  const fieldError = (name) => (touched[name] ? errors[name] : "");
+
   const handleSubmit = (e) => {
+    if (Object.keys(errors).length > 0) {
+      e.preventDefault();
+      setTouched({
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        password: true,
+        confirmPassword: true,
+      });
+      return;
+    }
     e.preventDefault();
 
     if (
@@ -110,7 +141,7 @@ export default function Register({
               appointments and capture your best moments.
             </p>
 
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={handleSubmit} noValidate>
 
               {/* FIRST + LAST NAME */}
 
@@ -120,12 +151,18 @@ export default function Register({
 
                   <label>
                     First Name *
+                    {fieldError("firstName") && (
+                      <span className="field-error">{fieldError("firstName")}</span>
+                    )}
                   </label>
 
                   <input
                     className="form-control"
                     type="text"
                     placeholder="First name"
+                    name="firstName"
+                    onBlur={handleBlur}
+                    aria-invalid={Boolean(fieldError("firstName"))}
                     value={firstName}
                     onChange={(e) =>
                       setFirstName(e.target.value)
@@ -139,12 +176,18 @@ export default function Register({
 
                   <label>
                     Last Name *
+                    {fieldError("lastName") && (
+                      <span className="field-error">{fieldError("lastName")}</span>
+                    )}
                   </label>
 
                   <input
                     className="form-control"
                     type="text"
                     placeholder="Last name"
+                    name="lastName"
+                    onBlur={handleBlur}
+                    aria-invalid={Boolean(fieldError("lastName"))}
                     value={lastName}
                     onChange={(e) =>
                       setLastName(e.target.value)
@@ -162,12 +205,18 @@ export default function Register({
 
                 <label>
                   Email Address *
+                  {fieldError("email") && (
+                    <span className="field-error">{fieldError("email")}</span>
+                  )}
                 </label>
 
                 <input
                   className="form-control"
                   type="email"
                   placeholder="you@example.com"
+                  name="email"
+                  onBlur={handleBlur}
+                  aria-invalid={Boolean(fieldError("email"))}
                   value={email}
                   onChange={(e) =>
                     setEmail(e.target.value)
@@ -183,12 +232,18 @@ export default function Register({
 
                 <label>
                   Phone Number *
+                  {fieldError("phone") && (
+                    <span className="field-error">{fieldError("phone")}</span>
+                  )}
                 </label>
 
                 <input
                   className="form-control"
                   type="tel"
                   placeholder="09XXXXXXXXX"
+                  name="phone"
+                  onBlur={handleBlur}
+                  aria-invalid={Boolean(fieldError("phone"))}
                   value={phone}
                   onChange={(e) =>
                     setPhone(e.target.value)
@@ -206,12 +261,18 @@ export default function Register({
 
                   <label>
                     Password *
+                    {fieldError("password") && (
+                      <span className="field-error">{fieldError("password")}</span>
+                    )}
                   </label>
 
                   <input
                     className="form-control"
                     type="password"
                     placeholder="Create password"
+                    name="password"
+                    onBlur={handleBlur}
+                    aria-invalid={Boolean(fieldError("password"))}
                     value={password}
                     onChange={(e) =>
                       setPassword(e.target.value)
@@ -224,13 +285,19 @@ export default function Register({
                 <div className="form-group">
 
                   <label>
-                    Confirm Password *
+                    	Confirm Password *
+                    {fieldError("confirmPassword") && (
+                      <span className="field-error">{fieldError("confirmPassword")}</span>
+                    )}
                   </label>
 
                   <input
                     className="form-control"
                     type="password"
                     placeholder="Confirm password"
+                    name="confirmPassword"
+                    onBlur={handleBlur}
+                    aria-invalid={Boolean(fieldError("confirmPassword"))}
                     value={confirmPassword}
                     onChange={(e) =>
                       setConfirmPassword(e.target.value)

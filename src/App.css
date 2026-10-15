@@ -3434,3 +3434,17 @@ body::after {
     transition-duration: 0.01ms !important;
   }
 }
+
+.field-error {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  color: #dc2626;
+}
+
+input[aria-invalid="true"] {
+  border-color: #dc2626;
+}

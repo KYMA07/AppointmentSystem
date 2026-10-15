@@ -179,6 +179,14 @@ export const createAppointment = async (req, res) => {
       receiptName = `${crypto.randomUUID()}${extension}`;
     }
 
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
+      return res.status(400).json({ message: "Invalid email address." });
+    }
+
+    if (!/^(09\d{9}|\+639\d{9})$/.test(data.phone.replace(/[\s-]/g, ""))) {
+      return res.status(400).json({ message: "Invalid phone number." });
+    }
+
     const appointment = await Appointment.create({
       gcashReceipt: receiptName,
       ...data,

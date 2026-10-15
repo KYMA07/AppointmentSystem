@@ -57,6 +57,16 @@ export const register = async (req, res) => {
         .json({ message: "Password must be 8 to 72 characters." })
     }
 
+    if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+      return res.status(400).json({
+        message: "Password must include at least one letter and one number.",
+      });
+    }
+
+    if (!/^(09\d{9}|\+639\d{9})$/.test(phone.replace(/[\s-]/g, ""))) {
+      return res.status(400).json({ message: "Invalid phone number." });
+    }
+
     const existing = await User.findOne({ email: email.toLowerCase() });
 
     if (existing) {
@@ -142,6 +152,14 @@ export const updateMe = async (req, res) => {
         .json({ message: "Please complete all required fields." });
     }
 
+    if (firstName.length > 50 || lastName.length > 50) {
+      return res.status(400).json({ message: "One or more fields are too long." });
+    }
+
+    if (!/^(09\d{9}|\+639\d{9})$/.test(phone.replace(/[\s-]/g, ""))) {
+      return res.status(400).json({ message: "Invalid phone number." });
+    }
+
     const user = await User.findById(req.user._id);
     user.firstName = firstName;
     user.lastName = lastName;
@@ -171,10 +189,16 @@ export const changePassword = async (req, res) => {
         .json({ message: "Please enter your current and new password." });
     }
 
-    if (newPassword.length < 8) {
-      return res
-        .status(400)
-        .json({ message: "New password must be at least 8 characters." });
+    if (
+      newPassword.length < 8 ||
+      newPassword.length > 72 ||
+      !/[A-Za-z]/.test(newPassword) ||
+      !/\d/.test(newPassword)
+    ) {
+      return res.status(400).json({
+        message:
+          "New password must be 8 to 72 characters with a letter and a number.",
+      });
     }
 
     if (newPassword === currentPassword) {
