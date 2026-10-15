@@ -33,6 +33,7 @@ export default function ChoosePackages({
   onConfirm,
   setCurrentView,
   appointments = [],
+  studioSettings = {}, // Added prop for settings injection
 }) {
   /* 
      APPOINTMENT
@@ -561,7 +562,7 @@ export default function ChoosePackages({
 
       const text =
         result?.data?.text ||
-        "";
+        ";"
 
       setOcrText(text);
 
@@ -1456,6 +1457,16 @@ if (isSlotBooked(date, time)) {
                       GCash Payment Verification
                     </h3>
 
+                    {/* DYNAMIC GCASH INFO INJECTED HERE */}
+                    <div className="mt-4 mb-4 rounded-xl bg-white p-4 border border-sky-100">
+                      <p className="text-sm text-slate-600 mb-1">
+                        Account Name: <strong className="text-slate-900">{studioSettings?.gcashName || "Snap Yourself Studio"}</strong>
+                      </p>
+                      <p className="text-sm text-slate-600">
+                        GCash Number: <strong className="text-slate-900">{studioSettings?.gcashNumber || "09123456789"}</strong>
+                      </p>
+                    </div>
+
                     <p className="mt-1 text-sm text-slate-600">
                       Upload your GCash payment receipt and enter
                       the 13-digit reference number shown on the receipt.
@@ -1693,12 +1704,6 @@ if (isSlotBooked(date, time)) {
                     )}
 
                   </div>
-
-                  {
-                  }
-
-                  {
-                  }
 
                 </div>
               )}
