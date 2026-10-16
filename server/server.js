@@ -15,6 +15,9 @@ import "./models/Appointment.js";
 
 const app = express();
 
+/* Behind the host's reverse proxy: use the real client IP (needed for rate limiting) */
+app.set("trust proxy", 1);
+
 app.use(helmet());
 app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:5173" }));
 app.use(express.json({ limit: "10kb" }));
@@ -64,6 +67,7 @@ app.use((err, req, res, next) => {
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
   console.warn("WARNING: JWT_SECRET is missing or too short. Use a long random value.");
+  if (process.env.NODE_ENV === "production") process.exit(1);
 }
 
 const PORT = process.env.PORT || 5000;
